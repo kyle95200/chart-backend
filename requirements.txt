@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-pillow
 numpy
-scikit-image
+pandas
+opencv-python-headless==4.10.0.84
+scikit-learn
 python-multipart
