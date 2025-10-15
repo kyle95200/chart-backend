@@ -12,11 +12,12 @@ app = FastAPI()
 # Allow Base44 or other frontend domains to connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten later for production
+    allow_origins=["*"],  # or restrict to your Base44 app domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
