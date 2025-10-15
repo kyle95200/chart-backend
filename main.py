@@ -17,6 +17,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 
 # Directory for your saved reference chart patterns
 REFERENCE_DIR = "reference_patterns"
