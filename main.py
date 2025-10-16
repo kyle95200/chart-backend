@@ -24,8 +24,32 @@ def health():
 
 @app.post("/upsert")
 async def upsert_chart(data: dict):
-    # Handle your vector DB or file storage logic
-    return {"status": "success", "message": "Chart data upserted successfully"}
+    """
+    Receives a chart upload from Base44 and stores or updates it.
+    """
+    try:
+        chart_url = data.get("chart_url")
+        metadata = data.get("metadata", {})
+        user = data.get("user", {})
+
+        if not chart_url:
+            return {"status": "error", "message": "chart_url missing"}
+
+        # Here’s where you’d handle any vector DB or file sync logic
+        # Example: store the chart for later image comparison
+        print(f"Received chart from {user.get('email')}: {chart_url}")
+        print(f"Metadata: {metadata}")
+
+        # Just send back a success response for now
+        return {
+            "status": "success",
+            "message": "Chart received and upserted successfully.",
+            "chart_url": chart_url
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 # Directory for your saved reference chart patterns
 REFERENCE_DIR = "reference_patterns"
