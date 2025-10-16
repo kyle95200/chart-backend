@@ -23,33 +23,35 @@ def health():
     return {"status": "ok"}
 
 @app.post("/upsert")
-async def upsert_chart(data: dict):
+async def upsert_chart(file: UploadFile = File(...)):
     """
     Receives a chart upload from Base44 and stores or updates it.
     """
     try:
-        chart_url = data.get("chart_url")
-        metadata = data.get("metadata", {})
-        user = data.get("user", {})
+        # Read uploaded file
+        contents = await file.read()
 
-        if not chart_url:
-            return {"status": "error", "message": "chart_url missing"}
+        # Log for debugging
+        print(f"Received file: {file.filename}, size={len(contents)} bytes")
 
-        # Here’s where you’d handle any vector DB or file sync logic
-        # Example: store the chart for later image comparison
-        print(f"Received chart from {user.get('email')}: {chart_url}")
-        print(f"Metadata: {metadata}")
+        # Save uploaded file locally (optional)
+        upload_path = os.path.join("uploaded_charts", file.filename)
+        os.makedirs("uploaded_charts", exist_ok=True)
+        with open(upload_path, "wb") as f:
+            f.write(contents)
 
-        # Just send back a success response for now
+        # Here you can update your vector DB or trigger analysis, etc.
+        print(f"Chart saved at: {upload_path}")
+
         return {
             "status": "success",
-            "message": "Chart received and upserted successfully.",
-            "chart_url": chart_url
+            "message": "Chart received and stored successfully.",
+            "filename": file.filename
         }
 
     except Exception as e:
+        print("Upsert error:", str(e))
         return {"status": "error", "message": str(e)}
-
 
 # Directory for your saved reference chart patterns
 REFERENCE_DIR = "reference_patterns"
