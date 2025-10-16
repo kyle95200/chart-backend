@@ -22,6 +22,10 @@ app.add_middleware(
 def health():
     return {"status": "ok"}
 
+@app.post("/upsert")
+async def upsert_chart(data: dict):
+    # Handle your vector DB or file storage logic
+    return {"status": "success", "message": "Chart data upserted successfully"}
 
 # Directory for your saved reference chart patterns
 REFERENCE_DIR = "reference_patterns"
