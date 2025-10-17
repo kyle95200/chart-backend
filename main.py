@@ -92,6 +92,34 @@ REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
 print(f"📁 Reference directory: {REFERENCE_DIR}")
 print("📁 Files found:", glob.glob(os.path.join(REFERENCE_DIR, "*")))
 
+from fastapi import FastAPI, File, UploadFile
+import os
+import shutil
+
+REFERENCE_DIR = "reference_patterns"
+os.makedirs(REFERENCE_DIR, exist_ok=True)
+
+@app.post("/upload_reference")
+async def upload_reference(file: UploadFile = File(...)):
+    """Upload a reference chart to the reference_patterns folder"""
+    try:
+        # Ensure directory exists
+        os.makedirs(REFERENCE_DIR, exist_ok=True)
+
+        # Save uploaded file
+        save_path = os.path.join(REFERENCE_DIR, file.filename)
+        with open(save_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        return {
+            "status": "success",
+            "message": f"File '{file.filename}' uploaded successfully",
+            "path": save_path
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/analyze")
 async def analyze_chart(file: UploadFile = File(...)):
     """Analyze uploaded chart and compare against stored reference patterns"""
