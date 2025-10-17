@@ -74,9 +74,8 @@ def compare_images(img1, img2):
     img2_gray = cv2.resize(img2_gray, (w, h))
 
     # Compute SSIM
-    score = cv2.matchTemplate(img1_gray, img2_gray, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, _ = cv2.minMaxLoc(score)
-    return float(max_val)
+    score, _ = ssim(img1_gray, img2_gray, full=True)
+    return float(score)
 
 REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
 print(f"📁 Reference directory: {REFERENCE_DIR}")
