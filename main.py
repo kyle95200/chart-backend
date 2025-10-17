@@ -7,6 +7,17 @@ import io
 import os
 import glob
 
+# Ensure reference_patterns directory exists
+REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
+os.makedirs(REFERENCE_DIR, exist_ok=True)
+
+# Log what’s inside
+print(f"📁 Reference directory: {REFERENCE_DIR}")
+if not os.listdir(REFERENCE_DIR):
+    print("⚠️  No reference files found. You can upload or sync patterns later.")
+else:
+    print(f"📁 Files found: {os.listdir(REFERENCE_DIR)}")
+
 app = FastAPI()
 
 # Allow Base44 or other frontend domains to connect
