@@ -78,6 +78,9 @@ def compare_images(img1, img2):
     _, max_val, _, _ = cv2.minMaxLoc(score)
     return float(max_val)
 
+REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
+print(f"📁 Reference directory: {REFERENCE_DIR}")
+print("📁 Files found:", glob.glob(os.path.join(REFERENCE_DIR, "*")))
 
 @app.post("/analyze")
 async def analyze_chart(file: UploadFile = File(...)):
