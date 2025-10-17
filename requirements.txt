@@ -6,3 +6,4 @@ opencv-python-headless==4.9.0.80
 scikit-learn==1.5.1
 python-multipart==0.0.9
 Pillow==10.3.0
+scikit-image
