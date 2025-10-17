@@ -95,30 +95,39 @@ print("📁 Files found:", glob.glob(os.path.join(REFERENCE_DIR, "*")))
 from fastapi import FastAPI, File, UploadFile
 import os
 import shutil
+import os
+import shutil
+from fastapi import FastAPI, UploadFile, File
+
+app = FastAPI()
 
 REFERENCE_DIR = "reference_patterns"
 os.makedirs(REFERENCE_DIR, exist_ok=True)
 
 @app.post("/upload_reference")
 async def upload_reference(file: UploadFile = File(...)):
-    """Upload a reference chart to the reference_patterns folder"""
+    """Save uploaded image to reference_patterns folder."""
+    save_path = os.path.join(REFERENCE_DIR, file.filename)
     try:
-        # Ensure directory exists
-        os.makedirs(REFERENCE_DIR, exist_ok=True)
-
-        # Save uploaded file
-        save_path = os.path.join(REFERENCE_DIR, file.filename)
         with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-
-        return {
-            "status": "success",
-            "message": f"File '{file.filename}' uploaded successfully",
-            "path": save_path
-        }
+        print(f"✅ Saved reference image: {save_path}")
+        return {"status": "success", "message": f"Saved {file.filename} to reference library."}
     except Exception as e:
+        print(f"❌ Error saving reference image: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/analyze")
+async def analyze_chart(file: UploadFile = File(...)):
+    """Compare uploaded image to reference patterns."""
+    reference_files = os.listdir(REFERENCE_DIR)
+    if not reference_files:
+        return {"status": "error", "message": "No reference images found. Please upload some first."}
+
+    # You can replace this with your actual image comparison logic:
+    result = {"comparison_count": len(reference_files), "matched": False}
+    print(f"🧩 Comparing uploaded chart against {len(reference_files)} references...")
+    return {"status": "success", "result": result}
 
 @app.post("/analyze")
 async def analyze_chart(file: UploadFile = File(...)):
