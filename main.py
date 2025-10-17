@@ -117,6 +117,16 @@ async def upload_reference(file: UploadFile = File(...)):
         print(f"❌ Error saving reference image: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/upload_reference_json")
+async def upload_reference_json(data: dict):
+    """Handle JSON-based reference uploads from frontend (Base44 style)."""
+    try:
+        print(f"📩 Received JSON upload: {data}")
+        return {"status": "success", "message": "JSON data received", "data": data}
+    except Exception as e:
+        print(f"❌ Error receiving JSON: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.post("/analyze")
 async def analyze_chart(file: UploadFile = File(...)):
     """Compare uploaded image to reference patterns."""
