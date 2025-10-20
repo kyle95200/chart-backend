@@ -121,18 +121,17 @@ async def upload_reference(file: UploadFile = File(...)):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-
 @app.post("/upload_reference_json")
-async def upload_reference_json(request: dict):
+async def upload_reference_json(request: Request):
     """
     Accept Base44-style JSON uploads where the image is already hosted (file_url).
     Downloads the image to the reference_patterns folder.
     """
     try:
-        import requests
+        data = await request.json()
+        file_url = data.get("file_url")
+        title = data.get("title", "unnamed")
 
-        file_url = request.get("file_url")
-        title = request.get("title", "unnamed")
         if not file_url:
             return {"status": "error", "message": "Missing 'file_url' in request"}
 
