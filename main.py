@@ -154,8 +154,73 @@ async def upload_reference_json(request: Request):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+import cv2
+import numpy as np
+from fastapi import UploadFile, File
+
+# --- Core reusable analysis logic ---
+async def analyze_uploaded_chart(image_path: str):
+    """Analyze an uploaded chart against stored reference patterns."""
+    try:
+        reference_files = [
+            f for f in os.listdir(REFERENCE_DIR)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+        ]
+
+        if not reference_files:
+            return {"status": "no_references", "message": "No reference charts found."}
+
+        # Load uploaded image
+        uploaded_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        if uploaded_img is None:
+            return {"status": "error", "message": "Invalid uploaded image."}
+
+        best_match = None
+        best_score = -1
+
+        # Compare with all references
+        for ref_file in reference_files:
+            ref_path = os.path.join(REFERENCE_DIR, ref_file)
+            ref_img = cv2.imread(ref_path, cv2.IMREAD_GRAYSCALE)
+
+            if ref_img is None:
+                continue
+
+            # Resize for uniformity
+            ref_img_resized = cv2.resize(ref_img, (uploaded_img.shape[1], uploaded_img.shape[0]))
+
+            # Compute similarity using correlation coefficient
+            score = cv2.matchTemplate(uploaded_img, ref_img_resized, cv2.TM_CCOEFF_NORMED).max()
+
+            if score > best_score:
+                best_score = score
+                best_match = ref_file
+
+        if best_match:
+            return {
+                "status": "success",
+                "best_match": best_match,
+                "confidence_score": round(float(best_score), 3),
+            }
+        else:
+            return {"status": "no_match", "message": "No suitable match found."}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# --- Normal API route version (still usable from frontend if needed) ---
 @app.post("/analyze")
 async def analyze_chart(file: UploadFile = File(...)):
+    os.makedirs("temp_uploads", exist_ok=True)
+    temp_path = os.path.join("temp_uploads", file.filename)
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    result = await analyze_uploaded_chart(temp_path)
+    os.remove(temp_path)
+    return result
+
     """Compare uploaded image to reference patterns."""
     reference_files = os.listdir(REFERENCE_DIR)
     if not reference_files:
@@ -202,6 +267,42 @@ async def analyze_chart(file: UploadFile = File(...)):
         }
 
     except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+from fastapi import UploadFile, File
+import shutil
+import os
+
+@app.post("/process_chart")
+async def process_chart(file: UploadFile = File(...)):
+    """
+    Upload a chart, save it to the reference folder, and automatically analyze it.
+    """
+    try:
+        # Ensure directory exists
+        os.makedirs(REFERENCE_DIR, exist_ok=True)
+
+        # Save uploaded file
+        save_path = os.path.join(REFERENCE_DIR, file.filename)
+        with open(save_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Log that the upload succeeded
+        print(f"✅ Saved new chart: {save_path}")
+
+        # Automatically analyze the uploaded image
+        from main import analyze_uploaded_chart  # Import your analyze logic if separated
+        analysis_result = await analyze_uploaded_chart(save_path)
+
+        return {
+            "status": "success",
+            "message": f"Chart '{file.filename}' uploaded and analyzed successfully.",
+            "file_path": save_path,
+            "analysis_result": analysis_result,
+        }
+
+    except Exception as e:
+        print(f"❌ Error in /process_chart: {str(e)}")
         return {"status": "error", "message": str(e)}
 
 
