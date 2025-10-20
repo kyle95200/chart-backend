@@ -106,25 +106,52 @@ os.makedirs(REFERENCE_DIR, exist_ok=True)
 
 @app.post("/upload_reference")
 async def upload_reference(file: UploadFile = File(...)):
-    """Save uploaded image to reference_patterns folder."""
-    save_path = os.path.join(REFERENCE_DIR, file.filename)
+    """Upload a reference chart directly (manual upload)."""
     try:
+        os.makedirs(REFERENCE_DIR, exist_ok=True)
+        save_path = os.path.join(REFERENCE_DIR, file.filename)
         with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        print(f"✅ Saved reference image: {save_path}")
-        return {"status": "success", "message": f"Saved {file.filename} to reference library."}
+
+        return {
+            "status": "success",
+            "message": f"File '{file.filename}' uploaded successfully",
+            "path": save_path
+        }
     except Exception as e:
-        print(f"❌ Error saving reference image: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.post("/upload_reference_json")
-async def upload_reference_json(data: dict):
-    """Handle JSON-based reference uploads from frontend (Base44 style)."""
+async def upload_reference_json(request: dict):
+    """
+    Accept Base44-style JSON uploads where the image is already hosted (file_url).
+    Downloads the image to the reference_patterns folder.
+    """
     try:
-        print(f"📩 Received JSON upload: {data}")
-        return {"status": "success", "message": "JSON data received", "data": data}
+        import requests
+
+        file_url = request.get("file_url")
+        title = request.get("title", "unnamed")
+        if not file_url:
+            return {"status": "error", "message": "Missing 'file_url' in request"}
+
+        os.makedirs(REFERENCE_DIR, exist_ok=True)
+        save_path = os.path.join(REFERENCE_DIR, f"{title}.png")
+
+        # Download the image and save it
+        resp = requests.get(file_url, timeout=10)
+        resp.raise_for_status()
+        with open(save_path, "wb") as f:
+            f.write(resp.content)
+
+        return {
+            "status": "success",
+            "message": f"File '{title}' saved to reference library.",
+            "path": save_path
+        }
+
     except Exception as e:
-        print(f"❌ Error receiving JSON: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.post("/analyze")
