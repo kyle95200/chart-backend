@@ -6,6 +6,7 @@ import cv2
 import io
 import os
 import glob
+from fastapi import FastAPI, File, UploadFile, Request
 
 # Ensure reference_patterns directory exists
 REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
