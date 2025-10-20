@@ -7,6 +7,9 @@ import io
 import os
 import glob
 from fastapi import FastAPI, File, UploadFile, Request
+from fastapi import UploadFile, File
+import shutil
+import os
 
 # Ensure reference_patterns directory exists
 REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
@@ -268,10 +271,6 @@ async def analyze_chart(file: UploadFile = File(...)):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-from fastapi import UploadFile, File
-import shutil
-import os
 
 @app.post("/process_chart")
 async def process_chart(file: UploadFile = File(...)):
