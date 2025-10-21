@@ -24,10 +24,15 @@ else:
 
 app = FastAPI()
 
-# Allow Base44 or other frontend domains to connect
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or restrict to your Base44 app domain
+    allow_origins=[
+        "*",  # Temporarily allow all while testing
+        # Later replace with your Base44 URL for better security
+        # "https://yourproject.base44.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
