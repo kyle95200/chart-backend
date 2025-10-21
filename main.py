@@ -10,7 +10,9 @@ import glob
 import shutil
 import requests
 
-# --- Paths ---
+# ===============================
+# 🌍 DIRECTORY SETUP
+# ===============================
 BASE_DIR = os.getcwd()
 REFERENCE_DIR = os.path.join(BASE_DIR, "reference_patterns")
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_charts")
@@ -18,57 +20,68 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_charts")
 os.makedirs(REFERENCE_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# --- App Setup ---
-app = FastAPI(title="Chart Pattern Recognition API")
+# ===============================
+# 🚀 FASTAPI INITIALIZATION
+# ===============================
+app = FastAPI(title="TradeMirror Chart Recognition API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all for testing; replace later with your Base44 URL
+    allow_origins=["*"],  # TODO: Replace "*" with Base44 frontend domain later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Utility Functions ---
+# ===============================
+# 🧠 HELPER FUNCTIONS
+# ===============================
 def compare_images(img1, img2):
-    """Compare two charts using structural similarity."""
+    """Compare two images and return a similarity score."""
     try:
         img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
         img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
+        # Match resolution
         h, w = min(img1_gray.shape[0], img2_gray.shape[0]), min(img1_gray.shape[1], img2_gray.shape[1])
         img1_gray = cv2.resize(img1_gray, (w, h))
         img2_gray = cv2.resize(img2_gray, (w, h))
 
-        # Template matching for visual similarity
+        # Structural correlation
         score = cv2.matchTemplate(img1_gray, img2_gray, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, _ = cv2.minMaxLoc(score)
         return float(max_val)
     except Exception:
         return 0.0
 
+
 def get_public_url(filename: str, folder: str):
-    """Return a public-style URL for an image."""
+    """Return a Render-hosted public image URL."""
     safe_name = filename.replace(" ", "_")
     return f"https://chart-backend-ht00.onrender.com/{folder}/{safe_name}"
 
-# --- Routes ---
 
+# ===============================
+# 🩺 HEALTH + STATIC ROUTES
+# ===============================
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 @app.get("/")
 def home():
     return {"status": "Backend running successfully"}
 
+
 @app.get("/reference/{filename}")
 def get_reference_image(filename: str):
-    """Serve reference pattern images."""
+    """Serve reference chart images."""
     file_path = os.path.join(REFERENCE_DIR, filename)
     if os.path.exists(file_path):
         return FileResponse(file_path)
     return JSONResponse({"status": "error", "message": "Reference file not found"}, status_code=404)
+
 
 @app.get("/uploaded/{filename}")
 def get_uploaded_image(filename: str):
@@ -78,9 +91,12 @@ def get_uploaded_image(filename: str):
         return FileResponse(file_path)
     return JSONResponse({"status": "error", "message": "Uploaded file not found"}, status_code=404)
 
-# --- Analyze Function ---
+
+# ===============================
+# 🔍 ANALYSIS LOGIC
+# ===============================
 async def analyze_uploaded_chart(image_path: str):
-    """Compare an uploaded chart with all reference patterns."""
+    """Compare uploaded chart against all stored reference patterns."""
     reference_files = [
         f for f in os.listdir(REFERENCE_DIR)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
@@ -93,9 +109,7 @@ async def analyze_uploaded_chart(image_path: str):
     if uploaded_img is None:
         return {"status": "error", "message": "Invalid uploaded image."}
 
-    best_match = None
-    best_score = -1
-
+    results = []
     for ref_file in reference_files:
         ref_path = os.path.join(REFERENCE_DIR, ref_file)
         ref_img = cv2.imread(ref_path, cv2.IMREAD_COLOR)
@@ -103,42 +117,57 @@ async def analyze_uploaded_chart(image_path: str):
             continue
 
         score = compare_images(uploaded_img, ref_img)
-        if score > best_score:
-            best_score = score
-            best_match = ref_file
+        results.append({
+            "reference": ref_file,
+            "similarity": round(score, 3),
+            "reference_url": get_public_url(ref_file, "reference")
+        })
+
+    # Sort by best score
+    results = sorted(results, key=lambda x: x["similarity"], reverse=True)
+    best_match = results[0] if results else None
 
     if best_match:
         return {
             "status": "success",
-            "best_match": best_match,
-            "confidence_score": round(best_score, 3),
-            "best_match_url": get_public_url(best_match, "reference"),
+            "best_match": best_match["reference"],
+            "best_match_url": best_match["reference_url"],
+            "confidence_score": best_match["similarity"],
+            "top_matches": results[:3]  # top 3 matches for later use
         }
     else:
-        return {"status": "no_match", "message": "No match found."}
+        return {"status": "no_match", "message": "No suitable match found."}
 
-# --- Core Upload + Auto-Analyze ---
+
+# ===============================
+# 📤 UPLOAD + AUTO-LEARN
+# ===============================
 @app.post("/process_chart")
 async def process_chart(file: UploadFile = File(...)):
     """
-    Uploads a chart, stores it, analyzes it against reference patterns,
-    and returns URLs for both uploaded and best-match charts.
+    Upload a chart → Save to uploads + reference folder →
+    Run analysis → Return results and image URLs.
     """
     try:
-        # Save the uploaded chart
         file_name = file.filename.replace(" ", "_")
-        save_path = os.path.join(UPLOAD_DIR, file_name)
-        with open(save_path, "wb") as buffer:
+
+        # Save in /uploaded_charts
+        upload_path = os.path.join(UPLOAD_DIR, file_name)
+        with open(upload_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        print(f"✅ Saved new chart: {save_path}")
+        print(f"✅ Saved new chart in uploads: {upload_path}")
 
-        # Analyze the chart
-        analysis = await analyze_uploaded_chart(save_path)
+        # Also copy into /reference_patterns for ML library
+        reference_path = os.path.join(REFERENCE_DIR, file_name)
+        shutil.copy(upload_path, reference_path)
+        print(f"📚 Added to reference library: {reference_path}")
 
-        # Compose result
+        # Analyze after saving
+        analysis = await analyze_uploaded_chart(upload_path)
+
         response = {
             "status": "success",
-            "message": f"Chart '{file_name}' uploaded and analyzed successfully.",
+            "message": f"Chart '{file_name}' uploaded, added to library, and analyzed successfully.",
             "uploaded_chart_url": get_public_url(file_name, "uploaded"),
             "analysis_result": analysis,
         }
@@ -150,7 +179,9 @@ async def process_chart(file: UploadFile = File(...)):
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
-# --- Server Start ---
+# ===============================
+# 🧱 SERVER STARTUP
+# ===============================
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 10000))
