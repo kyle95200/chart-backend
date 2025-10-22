@@ -21,7 +21,6 @@ MEMORY_FILE = os.path.join(os.getcwd(), "pattern_memory.json")
 os.makedirs(REFERENCE_DIR, exist_ok=True)
 for f in [FEEDBACK_FILE, MEMORY_FILE]:
     if not os.path.exists(f):
-        # Initialize as empty list for feedback and empty dict for memory
         with open(f, "w") as file:
             if "feedback" in f:
                 json.dump([], file)
@@ -34,7 +33,7 @@ app.mount("/reference_patterns", StaticFiles(directory=REFERENCE_DIR), name="ref
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Later replace with Base44 domain
+    allow_origins=["*"],  # Replace with your Base44 frontend domain later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,9 +68,7 @@ def save_memory(memory):
         json.dump(memory, f, indent=2)
 
 def update_pattern_memory(match_name, confidence, correct):
-    """Adjust confidence weights dynamically based on feedback."""
     memory = load_memory()
-
     if match_name not in memory:
         memory[match_name] = {"total": 0, "correct": 0, "score": 0}
 
@@ -81,7 +78,6 @@ def update_pattern_memory(match_name, confidence, correct):
 
     accuracy = memory[match_name]["correct"] / memory[match_name]["total"]
     memory[match_name]["score"] = round((accuracy + confidence) / 2, 3)
-
     save_memory(memory)
     print(f"🧩 Memory updated for {match_name}: {memory[match_name]}")
 
@@ -173,7 +169,6 @@ async def feedback(request: Request):
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-        # Ensure feedback log is always a list
         feedback_data = []
         if os.path.exists(FEEDBACK_FILE):
             with open(FEEDBACK_FILE, "r") as f:
@@ -186,12 +181,10 @@ async def feedback(request: Request):
                 except json.JSONDecodeError:
                     feedback_data = []
 
-        # Add feedback entry
         feedback_data.append(feedback_entry)
         with open(FEEDBACK_FILE, "w") as f:
             json.dump(feedback_data, f, indent=2)
 
-        # Update AI memory adaptively
         if feedback_entry["matched_chart"]:
             match_name = os.path.basename(feedback_entry["matched_chart"])
             update_pattern_memory(match_name, feedback_entry["confidence"], feedback_entry["is_correct"])
@@ -202,6 +195,49 @@ async def feedback(request: Request):
     except Exception as e:
         print("❌ Feedback error:", str(e))
         return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+
+# === AI Summary ===
+@app.get("/ai_summary")
+def ai_summary():
+    """
+    Returns a performance summary of AI learning progress.
+    Includes total patterns trained, average confidence, and top performers.
+    """
+    try:
+        if not os.path.exists(MEMORY_FILE):
+            return {"status": "error", "message": "No memory file found."}
+
+        with open(MEMORY_FILE, "r") as f:
+            memory = json.load(f)
+
+        if not memory:
+            return {"status": "no_data", "message": "No patterns trained yet."}
+
+        total_patterns = len(memory)
+        total_feedback = sum(m.get("total", 0) for m in memory.values())
+        avg_accuracy = (
+            sum(m.get("correct", 0) / m.get("total", 1) for m in memory.values()) / total_patterns
+        )
+        avg_score = sum(m.get("score", 0) for m in memory.values()) / total_patterns
+
+        top_patterns = sorted(memory.items(), key=lambda x: x[1].get("score", 0), reverse=True)[:3]
+
+        return {
+            "status": "success",
+            "summary": {
+                "total_patterns": total_patterns,
+                "total_feedback": total_feedback,
+                "average_accuracy": round(avg_accuracy * 100, 2),
+                "average_confidence": round(avg_score * 100, 2),
+                "top_patterns": [
+                    {"name": name, **data} for name, data in top_patterns
+                ],
+            },
+        }
+
+    except Exception as e:
+        print("❌ AI summary error:", e)
+        return {"status": "error", "message": str(e)}
 
 @app.get("/")
 def read_root():
