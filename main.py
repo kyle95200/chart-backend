@@ -9,6 +9,8 @@ import os
 import glob
 import shutil
 import requests
+import json
+from datetime import datetime
 
 # ====================================
 # 🌍 DIRECTORY SETUP
@@ -16,6 +18,7 @@ import requests
 BASE_DIR = os.getcwd()
 REFERENCE_DIR = os.path.join(BASE_DIR, "reference_patterns")
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_charts")
+FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback_log.json")
 
 os.makedirs(REFERENCE_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -27,7 +30,7 @@ app = FastAPI(title="TradeMirror Chart Recognition API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ⚠️ Replace with Base44 domain later for security
+    allow_origins=["*"],  # ⚠️ Replace with your Base44 domain later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -190,6 +193,43 @@ async def process_chart(file: UploadFile = File(...)):
     except Exception as e:
         print(f"❌ Error in /process_chart: {e}")
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+# ====================================
+# 🧠 FEEDBACK ENDPOINT
+# ====================================
+@app.post("/feedback")
+async def submit_feedback(request: Request):
+    """
+    Receive user feedback about match accuracy.
+    Example JSON:
+    {
+      "uploaded_chart": "EURUSD_2025-10-22_09-12.png",
+      "matched_chart": "double_top.png",
+      "confidence": 0.87,
+      "is_correct": true
+    }
+    """
+    try:
+        data = await request.json()
+        data["timestamp"] = datetime.utcnow().isoformat()
+
+        # Append to feedback log
+        if os.path.exists(FEEDBACK_FILE):
+            with open(FEEDBACK_FILE, "r") as f:
+                feedback_data = json.load(f)
+        else:
+            feedback_data = []
+
+        feedback_data.append(data)
+        with open(FEEDBACK_FILE, "w") as f:
+            json.dump(feedback_data, f, indent=2)
+
+        print(f"🧠 Feedback received: {data}")
+        return {"status": "success", "message": "Feedback recorded successfully."}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ====================================
