@@ -13,48 +13,41 @@ import requests
 import json
 from datetime import datetime
 
-# === Setup Directories ===
+# === Directories ===
 REFERENCE_DIR = os.path.join(os.getcwd(), "reference_patterns")
 FEEDBACK_FILE = os.path.join(os.getcwd(), "feedback_log.json")
+MEMORY_FILE = os.path.join(os.getcwd(), "pattern_memory.json")
 
 os.makedirs(REFERENCE_DIR, exist_ok=True)
+for f in [FEEDBACK_FILE, MEMORY_FILE]:
+    if not os.path.exists(f):
+        with open(f, "w") as file:
+            json.dump({}, file)
 
-print(f"📁 Reference directory: {REFERENCE_DIR}")
-if not os.listdir(REFERENCE_DIR):
-    print("⚠️  No reference files found. You can upload or sync patterns later.")
-else:
-    print(f"📁 Files found: {os.listdir(REFERENCE_DIR)}")
-
-# === Initialize App ===
+# === Initialize ===
 app = FastAPI()
-
-# Serve reference charts publicly
 app.mount("/reference_patterns", StaticFiles(directory=REFERENCE_DIR), name="reference_patterns")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ⚠️ Allow all for testing — restrict later to Base44 domain
+    allow_origins=["*"],  # for Base44, restrict later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# === Health Check ===
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# === Image Comparison Logic ===
+# === Core Comparison ===
 def compare_images(img1, img2):
-    """Compare two images and return similarity score."""
     try:
         img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
         img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-
         h, w = min(img1_gray.shape[0], img2_gray.shape[0]), min(img1_gray.shape[1], img2_gray.shape[1])
         img1_gray = cv2.resize(img1_gray, (w, h))
         img2_gray = cv2.resize(img2_gray, (w, h))
-
         score = cv2.matchTemplate(img1_gray, img2_gray, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, _ = cv2.minMaxLoc(score)
         return float(max_val)
@@ -62,10 +55,37 @@ def compare_images(img1, img2):
         print("❌ Image comparison error:", e)
         return 0.0
 
-# === Analyze Chart Function ===
+# === Adaptive Memory Logic ===
+def load_memory():
+    with open(MEMORY_FILE, "r") as f:
+        return json.load(f)
+
+def save_memory(memory):
+    with open(MEMORY_FILE, "w") as f:
+        json.dump(memory, f, indent=2)
+
+def update_pattern_memory(match_name, confidence, correct):
+    """Adjust confidence weights dynamically based on feedback."""
+    memory = load_memory()
+
+    if match_name not in memory:
+        memory[match_name] = {"total": 0, "correct": 0, "score": 0}
+
+    memory[match_name]["total"] += 1
+    if correct:
+        memory[match_name]["correct"] += 1
+
+    # Update weighted score
+    accuracy = memory[match_name]["correct"] / memory[match_name]["total"]
+    memory[match_name]["score"] = round((accuracy + confidence) / 2, 3)
+
+    save_memory(memory)
+    print(f"🧩 Memory updated for {match_name}: {memory[match_name]}")
+
+# === Chart Analysis ===
 async def analyze_uploaded_chart(image_path: str):
-    """Analyze uploaded chart and find the closest match from reference library."""
     try:
+        memory = load_memory()
         reference_files = [
             f for f in os.listdir(REFERENCE_DIR)
             if f.lower().endswith(('.png', '.jpg', '.jpeg'))
@@ -84,14 +104,20 @@ async def analyze_uploaded_chart(image_path: str):
         for ref_file in reference_files:
             ref_path = os.path.join(REFERENCE_DIR, ref_file)
             if os.path.abspath(ref_path) == os.path.abspath(image_path):
-                continue  # ✅ Skip comparing file to itself
+                continue
+
             ref_img = cv2.imread(ref_path)
             if ref_img is None:
                 continue
 
-            score = compare_images(uploaded_img, ref_img)
-            if score > best_score:
-                best_score = score
+            base_score = compare_images(uploaded_img, ref_img)
+
+            # Apply learned weighting from memory
+            learned_weight = memory.get(ref_file, {}).get("score", 0.5)
+            weighted_score = (base_score + learned_weight) / 2
+
+            if weighted_score > best_score:
+                best_score = weighted_score
                 best_match = ref_file
 
         if best_match:
@@ -109,25 +135,16 @@ async def analyze_uploaded_chart(image_path: str):
         print("❌ Analyze chart error:", e)
         return {"status": "error", "message": str(e)}
 
-# === Upload + Analyze ===
+# === Upload + Auto Analyze ===
 @app.post("/process_chart")
 async def process_chart(file: UploadFile = File(...)):
-    """
-    Upload a chart, save it to the reference folder, and automatically analyze it.
-    """
     try:
-        os.makedirs(REFERENCE_DIR, exist_ok=True)
         save_path = os.path.join(REFERENCE_DIR, file.filename)
-
         with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-
         print(f"✅ Saved new chart: {save_path}")
 
-        # Public URL for frontend
         public_url = f"https://chart-backend-ht00.onrender.com/reference_patterns/{os.path.basename(save_path)}"
-
-        # Run analysis
         analysis_result = await analyze_uploaded_chart(save_path)
 
         response = {
@@ -136,33 +153,15 @@ async def process_chart(file: UploadFile = File(...)):
             "uploaded_chart_url": public_url,
             "analysis_result": analysis_result,
         }
-
-        return JSONResponse(
-            content=response,
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            }
-        )
+        return JSONResponse(content=response, status_code=200)
 
     except Exception as e:
         print(f"❌ Error in /process_chart: {str(e)}")
-        return JSONResponse(
-            content={"status": "error", "message": str(e)},
-            status_code=500,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            }
-        )
+        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
-# === Feedback Endpoint ===
+# === Feedback ===
 @app.post("/feedback")
 async def feedback(request: Request):
-    """Store user feedback about chart matches."""
     try:
         data = await request.json()
         feedback_entry = {
@@ -170,49 +169,34 @@ async def feedback(request: Request):
             "matched_chart": data.get("matched_chart"),
             "confidence": data.get("confidence"),
             "is_correct": data.get("is_correct"),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
+        # Save feedback log
         feedback_data = []
         if os.path.exists(FEEDBACK_FILE):
             with open(FEEDBACK_FILE, "r") as f:
                 feedback_data = json.load(f)
-
         feedback_data.append(feedback_entry)
-
         with open(FEEDBACK_FILE, "w") as f:
             json.dump(feedback_data, f, indent=2)
 
-        print(f"🧠 Feedback recorded: {feedback_entry}")
+        # Adaptive learning update
+        if feedback_entry["matched_chart"]:
+            match_name = os.path.basename(feedback_entry["matched_chart"])
+            update_pattern_memory(match_name, feedback_entry["confidence"], feedback_entry["is_correct"])
 
-        return JSONResponse(
-            content={"status": "success", "message": "Feedback recorded."},
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            }
-        )
+        print(f"🧠 Feedback recorded and memory updated: {feedback_entry}")
+        return JSONResponse(content={"status": "success", "message": "Feedback recorded and learned."}, status_code=200)
 
     except Exception as e:
         print("❌ Feedback error:", str(e))
-        return JSONResponse(
-            content={"status": "error", "message": str(e)},
-            status_code=500,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            }
-        )
+        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
-# === Root Endpoint ===
 @app.get("/")
 def read_root():
     return {"status": "Backend running successfully"}
 
-# === Run Server ===
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 10000))
