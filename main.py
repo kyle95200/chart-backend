@@ -21,16 +21,20 @@ MEMORY_FILE = os.path.join(os.getcwd(), "pattern_memory.json")
 os.makedirs(REFERENCE_DIR, exist_ok=True)
 for f in [FEEDBACK_FILE, MEMORY_FILE]:
     if not os.path.exists(f):
+        # Initialize as empty list for feedback and empty dict for memory
         with open(f, "w") as file:
-            json.dump({}, file)
+            if "feedback" in f:
+                json.dump([], file)
+            else:
+                json.dump({}, file)
 
-# === Initialize ===
+# === Initialize App ===
 app = FastAPI()
 app.mount("/reference_patterns", StaticFiles(directory=REFERENCE_DIR), name="reference_patterns")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for Base44, restrict later
+    allow_origins=["*"],  # Later replace with Base44 domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,7 +59,7 @@ def compare_images(img1, img2):
         print("❌ Image comparison error:", e)
         return 0.0
 
-# === Adaptive Memory Logic ===
+# === Adaptive Memory ===
 def load_memory():
     with open(MEMORY_FILE, "r") as f:
         return json.load(f)
@@ -75,7 +79,6 @@ def update_pattern_memory(match_name, confidence, correct):
     if correct:
         memory[match_name]["correct"] += 1
 
-    # Update weighted score
     accuracy = memory[match_name]["correct"] / memory[match_name]["total"]
     memory[match_name]["score"] = round((accuracy + confidence) / 2, 3)
 
@@ -111,8 +114,6 @@ async def analyze_uploaded_chart(image_path: str):
                 continue
 
             base_score = compare_images(uploaded_img, ref_img)
-
-            # Apply learned weighting from memory
             learned_weight = memory.get(ref_file, {}).get("score", 0.5)
             weighted_score = (base_score + learned_weight) / 2
 
@@ -159,7 +160,7 @@ async def process_chart(file: UploadFile = File(...)):
         print(f"❌ Error in /process_chart: {str(e)}")
         return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
-# === Feedback ===
+# === Feedback Route (Fixed) ===
 @app.post("/feedback")
 async def feedback(request: Request):
     try:
@@ -172,16 +173,25 @@ async def feedback(request: Request):
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-        # Save feedback log
+        # Ensure feedback log is always a list
         feedback_data = []
         if os.path.exists(FEEDBACK_FILE):
             with open(FEEDBACK_FILE, "r") as f:
-                feedback_data = json.load(f)
+                try:
+                    content = json.load(f)
+                    if isinstance(content, list):
+                        feedback_data = content
+                    elif isinstance(content, dict):
+                        feedback_data = [content]
+                except json.JSONDecodeError:
+                    feedback_data = []
+
+        # Add feedback entry
         feedback_data.append(feedback_entry)
         with open(FEEDBACK_FILE, "w") as f:
             json.dump(feedback_data, f, indent=2)
 
-        # Adaptive learning update
+        # Update AI memory adaptively
         if feedback_entry["matched_chart"]:
             match_name = os.path.basename(feedback_entry["matched_chart"])
             update_pattern_memory(match_name, feedback_entry["confidence"], feedback_entry["is_correct"])
@@ -197,6 +207,7 @@ async def feedback(request: Request):
 def read_root():
     return {"status": "Backend running successfully"}
 
+# === Start Server ===
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 10000))
