@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 import numpy as np
 import cv2
@@ -27,9 +28,12 @@ else:
 # === Initialize App ===
 app = FastAPI()
 
+# Serve reference charts publicly
+app.mount("/reference_patterns", StaticFiles(directory=REFERENCE_DIR), name="reference_patterns")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: tighten to Base44 domain later
+    allow_origins=["*"],  # ⚠️ Allow all for testing — restrict later to Base44 domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,7 +84,7 @@ async def analyze_uploaded_chart(image_path: str):
         for ref_file in reference_files:
             ref_path = os.path.join(REFERENCE_DIR, ref_file)
             if os.path.abspath(ref_path) == os.path.abspath(image_path):
-                continue  # ✅ Skip comparing the file to itself
+                continue  # ✅ Skip comparing file to itself
             ref_img = cv2.imread(ref_path)
             if ref_img is None:
                 continue
@@ -91,9 +95,11 @@ async def analyze_uploaded_chart(image_path: str):
                 best_match = ref_file
 
         if best_match:
+            match_url = f"https://chart-backend-ht00.onrender.com/reference_patterns/{best_match}"
             return {
                 "status": "success",
                 "best_match": best_match,
+                "best_match_url": match_url,
                 "confidence_score": round(float(best_score), 3),
             }
         else:
@@ -103,7 +109,7 @@ async def analyze_uploaded_chart(image_path: str):
         print("❌ Analyze chart error:", e)
         return {"status": "error", "message": str(e)}
 
-# === Main Upload + Analyze Endpoint ===
+# === Upload + Analyze ===
 @app.post("/process_chart")
 async def process_chart(file: UploadFile = File(...)):
     """
@@ -118,13 +124,16 @@ async def process_chart(file: UploadFile = File(...)):
 
         print(f"✅ Saved new chart: {save_path}")
 
-        # Run automatic analysis
+        # Public URL for frontend
+        public_url = f"https://chart-backend-ht00.onrender.com/reference_patterns/{os.path.basename(save_path)}"
+
+        # Run analysis
         analysis_result = await analyze_uploaded_chart(save_path)
 
         response = {
             "status": "success",
             "message": f"Chart '{file.filename}' uploaded and analyzed successfully.",
-            "uploaded_chart_url": f"{save_path}",
+            "uploaded_chart_url": public_url,
             "analysis_result": analysis_result,
         }
 
@@ -153,9 +162,7 @@ async def process_chart(file: UploadFile = File(...)):
 # === Feedback Endpoint ===
 @app.post("/feedback")
 async def feedback(request: Request):
-    """
-    Store user feedback about chart matches.
-    """
+    """Store user feedback about chart matches."""
     try:
         data = await request.json()
         feedback_entry = {
